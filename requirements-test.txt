@@ -1,0 +1,9 @@
+# Lightweight dependencies for CI testing
+pytest==7.4.2
+numpy==1.24.3
+click==8.1.7
+pytest-mock==3.11.1
+
+# Optional ML dependencies - will be skipped in tests if not available
+# faiss-cpu==1.7.4
+# sentence-transformers==2.2.2
