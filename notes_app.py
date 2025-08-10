@@ -80,8 +80,13 @@ def index(ctx, force):
               help='Similarity threshold (0.0-1.0)')
 @click.option('--copy-ready', is_flag=True,
               help='Format output for easy copying to LLM')
+@click.option('--mode', '-m', default='auto',
+              type=click.Choice(['auto', 'traditional', 'semantic', 'hybrid']),
+              help='Search mode (default: auto)')
+@click.option('--explain', is_flag=True,
+              help='Show detailed explanation of search results')
 @click.pass_context
-def query(ctx, query, top_k, template, no_sources, threshold, copy_ready):
+def query(ctx, query, top_k, template, no_sources, threshold, copy_ready, mode, explain):
     """Search notes and generate context prompt for LLM."""
     query_engine = ctx.obj['query_engine']
     formatter = ctx.obj['formatter']
@@ -95,11 +100,12 @@ def query(ctx, query, top_k, template, no_sources, threshold, copy_ready):
     click.echo(f"🔍 Searching for: {query}")
     
     try:
-        # Perform search
+        # Perform search with hybrid mode support
         results = query_engine.search_notes(
             query, 
             top_k=top_k, 
-            similarity_threshold=threshold
+            similarity_threshold=threshold,
+            search_mode=mode
         )
         
         if not results:
@@ -107,6 +113,53 @@ def query(ctx, query, top_k, template, no_sources, threshold, copy_ready):
             if threshold:
                 click.echo(f"Try lowering the similarity threshold (current: {threshold})")
             return
+        
+        # Show search mode information
+        search_mode_used = results[0].get('search_mode', mode)
+        if search_mode_used:
+            mode_icons = {
+                'auto': '🎯', 'traditional': '📝', 'semantic': '🧠', 
+                'hybrid': '⚡', 'semantic_fallback': '🔄'
+            }
+            icon = mode_icons.get(search_mode_used, '🔍')
+            click.echo(f"{icon} Search mode: {search_mode_used}")
+            
+            # Show additional info for hybrid searches
+            if search_mode_used == 'hybrid' and results:
+                fusion_method = results[0].get('fusion_method', 'unknown')
+                click.echo(f"🔀 Fusion method: {fusion_method}")
+        
+        # Show explanation if requested
+        if explain:
+            click.echo("\n" + "="*50)
+            click.echo("🔍 SEARCH EXPLANATION")
+            click.echo("="*50)
+            
+            explanation = query_engine.explain_search_results(query, results)
+            
+            # Query analysis
+            qa = explanation.get('query_analysis', {})
+            click.echo(f"Query type: {qa.get('type', 'unknown')} (confidence: {qa.get('confidence', 0):.2f})")
+            if qa.get('phrases'):
+                click.echo(f"Phrases: {', '.join(qa['phrases'])}")
+            if qa.get('terms'):
+                click.echo(f"Terms: {', '.join(qa['terms'])}")
+            if qa.get('filters'):
+                click.echo(f"Filters: {qa['filters']}")
+            
+            # Result explanations
+            click.echo(f"\nTop {min(3, len(results))} result explanations:")
+            for res_exp in explanation.get('result_explanations', [])[:3]:
+                click.echo(f"\nRank {res_exp['rank']}: {res_exp['document_id']}")
+                click.echo(f"  Score: {res_exp['final_score']:.4f}")
+                click.echo(f"  Mode: {res_exp['search_mode']}")
+                
+                if 'source_ranks' in res_exp:
+                    click.echo(f"  Source ranks: {res_exp['source_ranks']}")
+                if 'source_scores' in res_exp:
+                    click.echo(f"  Source scores: {res_exp['source_scores']}")
+            
+            click.echo("="*50 + "\n")
         
         # Show search summary
         click.echo(f"📋 Found {len(results)} relevant notes:")
@@ -131,6 +184,79 @@ def query(ctx, query, top_k, template, no_sources, threshold, copy_ready):
         
     except Exception as e:
         click.echo(f"❌ Error during search: {e}", err=True)
+        sys.exit(1)
+
+
+@cli.command()
+@click.pass_context
+def stats(ctx):
+    """Show comprehensive statistics about the notes index and search usage."""
+    query_engine = ctx.obj['query_engine']
+    
+    try:
+        stats = query_engine.get_search_statistics()
+        
+        click.echo("📊 NOTES DATABASE STATISTICS")
+        click.echo("=" * 40)
+        
+        # Basic stats
+        click.echo(f"Total notes: {stats['total_notes']}")
+        click.echo(f"Collection: {stats['collection_name']}")
+        click.echo(f"Database directory: {stats['persist_directory']}")
+        
+        # Hybrid search stats
+        if 'hybrid_search' in stats:
+            hybrid = stats['hybrid_search']
+            config = hybrid.get('configuration', {})
+            
+            click.echo(f"\n🔍 HYBRID SEARCH STATUS")
+            click.echo("-" * 30)
+            click.echo(f"BM25 indexed: {'✅' if config.get('bm25_indexed') else '❌'}")
+            click.echo(f"Default fusion method: {config.get('default_fusion_method', 'unknown')}")
+            
+            # Search statistics
+            search_stats = hybrid.get('search_statistics', {})
+            if search_stats.get('total_searches', 0) > 0:
+                click.echo(f"\nTotal searches performed: {search_stats['total_searches']}")
+                
+                mode_usage = search_stats.get('mode_usage', {})
+                if mode_usage:
+                    click.echo("Search mode usage:")
+                    for mode, count in mode_usage.items():
+                        percentage = (count / search_stats['total_searches']) * 100
+                        click.echo(f"  {mode}: {count} ({percentage:.1f}%)")
+                
+                avg_results = search_stats.get('average_results', {})
+                if avg_results:
+                    click.echo("Average results per search:")
+                    for engine, avg in avg_results.items():
+                        if avg > 0:
+                            click.echo(f"  {engine}: {avg:.1f}")
+            
+            # Query processor stats
+            qp_stats = hybrid.get('query_processor_stats', {})
+            if qp_stats:
+                click.echo(f"\n📝 QUERY PROCESSOR")
+                click.echo("-" * 20)
+                click.echo(f"Stop words: {qp_stats.get('stop_words_count', 0)}")
+                click.echo(f"Technical indicators: {qp_stats.get('technical_indicators_count', 0)}")
+                click.echo(f"Synonym entries: {qp_stats.get('synonym_entries', 0)}")
+            
+            # Fusion statistics
+            fusion_stats = hybrid.get('fusion_statistics', {})
+            if fusion_stats.get('total_fusions_performed', 0) > 0:
+                click.echo(f"\n⚡ RESULT FUSION")
+                click.echo("-" * 15)
+                click.echo(f"Total fusions: {fusion_stats['total_fusions_performed']}")
+                
+                method_usage = fusion_stats.get('method_usage_counts', {})
+                if method_usage:
+                    click.echo("Fusion methods used:")
+                    for method, count in method_usage.items():
+                        click.echo(f"  {method}: {count}")
+        
+    except Exception as e:
+        click.echo(f"❌ Error retrieving statistics: {e}", err=True)
         sys.exit(1)
 
 

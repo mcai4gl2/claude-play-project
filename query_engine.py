@@ -1,26 +1,51 @@
 from typing import List, Dict, Optional, Tuple
 from vector_store import VectorStore
 from note_parser import NoteParser
+from hybrid_search_engine import HybridSearchEngine, SearchMode
 import os
 
 
 class QueryEngine:
     def __init__(self, vector_store: VectorStore):
         self.vector_store = vector_store
+        self.hybrid_engine = HybridSearchEngine(vector_store)
     
     def search_notes(self, query: str, top_k: int = 5, 
-                    similarity_threshold: Optional[float] = None) -> List[Dict[str, any]]:
+                    similarity_threshold: Optional[float] = None,
+                    search_mode: str = "auto") -> List[Dict[str, any]]:
         if not query or not query.strip():
             return []
         
-        results = self.vector_store.search(query, top_k)
+        # Map string mode to SearchMode enum
+        mode_mapping = {
+            "auto": SearchMode.AUTO,
+            "traditional": SearchMode.TRADITIONAL, 
+            "semantic": SearchMode.SEMANTIC,
+            "hybrid": SearchMode.HYBRID,
+            "custom": SearchMode.CUSTOM
+        }
         
-        if similarity_threshold is not None:
-            results = [r for r in results if r['distance'] <= similarity_threshold]
+        search_mode_enum = mode_mapping.get(search_mode.lower(), SearchMode.AUTO)
         
-        # Add relevance score (1 - normalized distance)
-        for result in results:
-            result['relevance_score'] = max(0, 1 - result['distance'])
+        # Use hybrid search engine
+        results = self.hybrid_engine.search(
+            query, 
+            mode=search_mode_enum,
+            top_k=top_k,
+            similarity_threshold=similarity_threshold
+        )
+        
+        # If hybrid search fails or returns no results, fallback to original vector search
+        if not results and search_mode_enum != SearchMode.TRADITIONAL:
+            results = self.vector_store.search(query, top_k)
+            
+            if similarity_threshold is not None:
+                results = [r for r in results if r['distance'] <= similarity_threshold]
+            
+            # Add relevance score (1 - normalized distance)
+            for result in results:
+                result['relevance_score'] = max(0, 1 - result['distance'])
+                result['search_mode'] = 'semantic_fallback'
         
         return results
     
@@ -45,11 +70,16 @@ class QueryEngine:
             
             indexed_count = self.vector_store.add_notes(notes)
             
+            # Build BM25 index for hybrid search
+            bm25_success = self.hybrid_engine.build_bm25_index(notes)
+            
             return {
                 'status': 'success',
                 'message': f'Successfully indexed {indexed_count} notes',
                 'indexed_count': indexed_count,
-                'notes_directory': notes_directory
+                'notes_directory': notes_directory,
+                'bm25_indexed': bm25_success,
+                'hybrid_search_enabled': bm25_success
             }
         else:
             # Check for new or updated files
@@ -60,18 +90,29 @@ class QueryEngine:
             
             if new_notes:
                 indexed_count = self.vector_store.add_notes(new_notes)
+                
+                # Rebuild BM25 index with all notes (including existing ones)
+                bm25_success = self.hybrid_engine.build_bm25_index(notes)
+                
                 return {
                     'status': 'incremental_update',
                     'message': f'Added {indexed_count} new notes',
                     'indexed_count': indexed_count,
-                    'total_count': existing_count + indexed_count
+                    'total_count': existing_count + indexed_count,
+                    'bm25_indexed': bm25_success,
+                    'hybrid_search_enabled': bm25_success
                 }
             else:
+                # Try to build BM25 index even if vector index is up to date
+                bm25_success = self.hybrid_engine.build_bm25_index(notes)
+                
                 return {
                     'status': 'up_to_date',
                     'message': 'Index is up to date',
                     'indexed_count': 0,
-                    'total_count': existing_count
+                    'total_count': existing_count,
+                    'bm25_indexed': bm25_success,
+                    'hybrid_search_enabled': bm25_success
                 }
     
     def get_similar_notes(self, note_content: str, top_k: int = 3,
@@ -126,3 +167,21 @@ class QueryEngine:
                           reverse=True)
         
         return title_matches[:top_k]
+    
+    def explain_search_results(self, query: str, results: List[Dict[str, any]]) -> Dict[str, any]:
+        """Get detailed explanation of search results"""
+        return self.hybrid_engine.explain_results(query, results)
+    
+    def get_search_statistics(self) -> Dict[str, any]:
+        """Get comprehensive search statistics including hybrid search stats"""
+        stats = self.get_stats()
+        hybrid_stats = self.hybrid_engine.get_search_statistics()
+        
+        return {
+            **stats,
+            'hybrid_search': hybrid_stats
+        }
+    
+    def configure_search_defaults(self, **kwargs):
+        """Configure default search parameters for hybrid search"""
+        return self.hybrid_engine.configure_defaults(**kwargs)
