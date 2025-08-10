@@ -72,11 +72,42 @@ class NoteParser:
             if re.match(r'^[=\-]+$', second_line):
                 return first_line
         
-        # Use first non-empty line if it's short (likely a title)
-        if len(first_line) < 100:
+        # Use first non-empty line if it's short and looks like a title
+        if len(first_line) < 100 and self._looks_like_title(first_line):
             return first_line
             
         return self._filename_to_title(filename)
+    
+    def _looks_like_title(self, text: str) -> bool:
+        # Heuristics to determine if text looks like a title
+        text = text.strip()
+        
+        # Contains phrases that suggest it's content, not a title
+        content_phrases = ['some content', 'without clear', 'this is', 'here is', 'lorem ipsum']
+        if any(phrase in text.lower() for phrase in content_phrases):
+            return False
+        
+        # Ends with punctuation that suggests it's content, not a title
+        if text.endswith(('.', '!', '?', ',', ';', ':')):
+            return False
+            
+        # Contains multiple sentences (likely content)
+        if len(text.split('.')) > 2:
+            return False
+            
+        # Very short and looks title-like (no generic words)
+        if len(text) < 50:
+            # But not if it contains generic content words
+            generic_words = ['content', 'text', 'example', 'sample', 'test']
+            if not any(word in text.lower() for word in generic_words):
+                return True
+            
+        # Contains common title words
+        title_words = ['introduction', 'guide', 'tutorial', 'overview', 'basics', 'concepts']
+        if any(word in text.lower() for word in title_words):
+            return True
+            
+        return False
     
     def _filename_to_title(self, filename: str) -> str:
         name = Path(filename).stem

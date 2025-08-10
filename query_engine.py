@@ -99,6 +99,10 @@ class QueryEngine:
         # to use a separate title index for better performance
         results = self.vector_store.search(title_query, top_k * 2)
         
+        # Add relevance score (same as search_notes)
+        for result in results:
+            result['relevance_score'] = max(0, 1 - result['distance'])
+        
         # Filter and score based on title similarity
         title_matches = []
         title_query_lower = title_query.lower()

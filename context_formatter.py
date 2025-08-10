@@ -9,6 +9,11 @@ class ContextFormatter:
     def format_context_prompt(self, query: str, search_results: List[Dict], 
                             include_sources: bool = True,
                             template_style: str = "standard") -> str:
+        # Validate template style first
+        valid_styles = ["standard", "detailed", "minimal"]
+        if template_style not in valid_styles:
+            raise ValueError(f"Unknown template style: {template_style}")
+        
         if not search_results:
             return self._format_no_results_prompt(query)
         
@@ -18,8 +23,6 @@ class ContextFormatter:
             return self._format_detailed_template(query, search_results, include_sources)
         elif template_style == "minimal":
             return self._format_minimal_template(query, search_results, include_sources)
-        else:
-            raise ValueError(f"Unknown template style: {template_style}")
     
     def _format_standard_template(self, query: str, search_results: List[Dict], 
                                 include_sources: bool) -> str:
