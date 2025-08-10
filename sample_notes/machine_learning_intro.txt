@@ -1,0 +1,43 @@
+Machine Learning Introduction
+==========================
+
+Machine learning is a subset of artificial intelligence that enables computers to learn and make decisions from data without being explicitly programmed for every task.
+
+Types of Machine Learning:
+
+1. Supervised Learning
+   - Uses labeled data to train models
+   - Examples: Classification, Regression
+   - Algorithms: Linear Regression, Decision Trees, Neural Networks
+
+2. Unsupervised Learning
+   - Finds patterns in unlabeled data
+   - Examples: Clustering, Dimensionality Reduction
+   - Algorithms: K-Means, PCA, Autoencoders
+
+3. Reinforcement Learning
+   - Learns through interaction with environment
+   - Uses rewards and penalties
+   - Examples: Game playing, Robotics
+
+Common Applications:
+- Image recognition and computer vision
+- Natural language processing
+- Recommendation systems
+- Fraud detection
+- Autonomous vehicles
+- Medical diagnosis
+
+Popular ML Libraries:
+- Scikit-learn: General purpose ML library
+- TensorFlow: Deep learning framework by Google
+- PyTorch: Deep learning framework by Facebook
+- XGBoost: Gradient boosting library
+- Keras: High-level neural networks API
+
+Getting Started:
+1. Learn Python programming basics
+2. Understand statistics and linear algebra
+3. Practice with real datasets
+4. Start with simple algorithms
+5. Gradually move to complex models
